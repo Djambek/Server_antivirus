@@ -9,8 +9,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Create certs
         run: |
-          pwd
-          ls -la ./src/main
+          mkdir ./src/main/resources
           echo $CERT | base64 -d > src/main/resources/server.jks
 
       - name: build project
