@@ -28,9 +28,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers(
+                                "/auth/**",
                                 "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/swagger",
+                                "/v3/api-docs/**",
                                 "/api-docs/**",
-                                "/swagger-ui.html"
+                                "/actuator/**"
                         ).permitAll()
                         .requestMatchers("/system/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/flights/**").hasRole("ADMIN")

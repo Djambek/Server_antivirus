@@ -1,0 +1,26 @@
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: maven:4.0.0-rc-5-eclipse-temurin-25-noble
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create certs
+        run: |
+          echo $CERT | base64 -d > src/main/resources/server.jks
+
+      - name: build project
+        run: mvn clean package
+
+      - name: move artifacts
+        run: |
+          mkdir artifacts
+          mv ./target/*.jar ./artifacts/build.jar
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: artifacts/
