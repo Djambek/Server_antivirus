@@ -10,7 +10,7 @@ jobs:
       - name: Create certs
         run: |
           pwd
-          ls -la ./src
+          ls -la ./src/main
           echo $CERT | base64 -d > src/main/resources/server.jks
 
       - name: build project
