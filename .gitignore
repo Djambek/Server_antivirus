@@ -42,3 +42,4 @@ build/
 .env
 certs/
 src/main/resources/server.jks
+src/main/resources/signing.jks
