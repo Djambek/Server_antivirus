@@ -1,25 +1,21 @@
 package ru.mtuci.Services;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.antlr.v4.runtime.misc.LogManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import ru.mtuci.Entities.*;
-import ru.mtuci.Models.LicenseActivationRequest;
-import ru.mtuci.Models.LicenseCreateRequest;
-import ru.mtuci.Models.Ticket;
-import ru.mtuci.Models.TicketResponse;
-import ru.mtuci.Repositories.DeviceLicenseRepository;
-import ru.mtuci.Repositories.DeviceRepository;
-import ru.mtuci.Repositories.LicenseHistoryRepository;
-import ru.mtuci.Repositories.LicenseRepository;
+import ru.mtuci.Models.*;
+import ru.mtuci.Repositories.*;
 
 import java.util.Calendar;
 import java.util.Date;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LicenseService {
@@ -36,10 +32,11 @@ public class LicenseService {
     @Transactional
     public License createLicense(LicenseCreateRequest request, ApplicationUser admin) {
         // 404
+        log.info("Function create license started");
         Product product = productService.getProductOrFail(request.getProductId());
         LicenseType licenseType = licenseTypeService.getTypeOrFail(request.getTypeId());
         ApplicationUser ownerUser = userDetailsService.getActiveUserOrFail(request.getOwnerId());
-
+        log.info("all product founded");
         // 2. Создание лицензии
         License license = new License();
         license.setCode(generateCode());
@@ -72,14 +69,15 @@ public class LicenseService {
     @Transactional
     public TicketResponse activateLicense(LicenseActivationRequest request, ApplicationUser currentUser) {
         // 1. Поиск лицензии по коду
+        log.info("Внутри активации");
         License license = licenseRepository.findByCode(request.getActivationCode())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "License not found"));
-
+        log.info("лизенция существует");
         // 2. Блок [license.user != null and license.user.id != userId] -> 403 Forbidden
         if (license.getUser() != null && !license.getUser().getId().equals(currentUser.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "License owned by another user");
         }
-
+        log.info("После проверки пользака");
         // 3. Поиск или регистрация устройства по MAC
         Device device = deviceRepository.findByMacAddress(request.getDeviceMacAddress())
                 .map(existingDevice -> {
@@ -95,7 +93,7 @@ public class LicenseService {
                     newDevice.setUser(currentUser);
                     return deviceRepository.save(newDevice);
                 });
-
+        log.info("Нашли девайс");
         // 4. Логика активации (первая или повторная)
         if (license.getUser() == null) {
             license.setUser(currentUser);
@@ -145,5 +143,92 @@ public class LicenseService {
         String signature = "digital_signature_placeholder";
 
         return new TicketResponse(ticket, signature);
+    }
+
+    public TicketResponse checkLicense(LicenseCheckRequest request, ApplicationUser currentUser) {
+        // 1. findByMac(request.deviceMac)
+        Device device = deviceRepository.findByMacAddress(request.getDeviceMacAddress())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Device not found"));
+
+        // 2. findActiveByDeviceUserAndProduct(...)
+        // Примечание: В запросе LicenseActivationRequest нет productId,
+        // для соответствия диаграмме может потребоваться расширить модель или передавать его иначе.
+        // Здесь предполагается использование ID продукта из логики приложения.
+        Product product = productService.getProductOrFail(request.getProductId());
+        License license = licenseRepository.findActiveByDeviceUserAndProduct(
+                device,
+                currentUser,
+                product.getId()
+        ).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Active license not found"));
+
+        // 3. build Ticket(license)
+        Ticket ticket = Ticket.builder()
+                .serverDate(new Date())
+                .ticketLifetime(900000L)
+                .activationDate(license.getFirst_activation_date())
+                .expirationDate(license.getEnding_date())
+                .userId(currentUser.getId())
+                .deviceId(device.getId())
+                .isBlocked(license.isBlocked())
+                .build();
+
+        String signature = "digital_signature_placeholder";
+
+        return new TicketResponse(ticket, signature);
+    }
+
+    @Transactional
+    public TicketResponse renewLicense(LicenseActivationRequest request, ApplicationUser currentUser) {
+        // 1. findByCodeOrFail (используем существующий репозиторий)
+        License license = licenseRepository.findByCode(request.getActivationCode())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "License not found"));
+
+        // 2. check renewability (inactive or expires <= 7 days)
+        Date now = new Date();
+        long sevenDaysInMs = 7L * 24 * 60 * 60 * 1000;
+        boolean isExpiredOrSoonExpiring = license.getEnding_date() != null &&
+                (license.getEnding_date().before(now) ||
+                        (license.getEnding_date().getTime() - now.getTime() <= sevenDaysInMs));
+
+        // Либо она еще не активирована (user == null), либо скоро истекает
+        if (license.getUser() != null && !isExpiredOrSoonExpiring) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Renewal not allowed: license is still active");
+        }
+
+        // 3. extend endingDate by license.type.defaultDuration
+        Calendar cal = Calendar.getInstance();
+        // Если лицензия уже истекла, продлеваем от текущей даты, если нет — от даты окончания
+        if (license.getEnding_date() != null && license.getEnding_date().after(now)) {
+            cal.setTime(license.getEnding_date());
+        } else {
+            cal.setTime(now);
+        }
+        cal.add(Calendar.DAY_OF_YEAR, license.getType().getDefault_duration_in_days());
+        license.setEnding_date(cal.getTime());
+
+        // 4. Transaction: save(license)
+        License savedLicense = licenseRepository.save(license);
+
+        // 5. Transaction: save(history: статус=RENEWED)
+        LicenseHistory history = new LicenseHistory();
+        history.setLicense(savedLicense);
+        history.setUser(currentUser);
+        history.setStatus("RENEWED");
+        history.setChange_date(new Date());
+        history.setDescription("License renewed by user");
+        licenseHistoryRepository.save(history);
+
+        // 6. build Ticket(license)
+        Ticket ticket = Ticket.builder()
+                .serverDate(new Date())
+                .ticketLifetime(900000L)
+                .activationDate(savedLicense.getFirst_activation_date())
+                .expirationDate(savedLicense.getEnding_date())
+                .userId(currentUser.getId())
+                .isBlocked(savedLicense.isBlocked())
+                // deviceId можно получить из истории или оставить null, если продление общее
+                .build();
+
+        return new TicketResponse(ticket, "digital_signature_placeholder");
     }
 }

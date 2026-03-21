@@ -1,9 +1,13 @@
 FROM maven:3.8-openjdk-17 AS builder
 WORKDIR /app
+
 COPY pom.xml .
+
+RUN mvn dependency:go-offline -B
+
 COPY src ./src
-# COPY application.properties .
-RUN mvn clean package -DskipTests
+
+RUN mvn package -DskipTests
 
 FROM openjdk:17.0.1-jdk-slim
 WORKDIR /app

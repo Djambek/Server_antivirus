@@ -36,9 +36,7 @@ public class SecurityConfig {
                                 "/api-docs/**",
                                 "/actuator/**"
                         ).permitAll()
-                        .requestMatchers("/system/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/flights/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/flights/**").hasRole("ADMIN")
+                        .requestMatchers("/api/licenses/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
