@@ -29,6 +29,8 @@ public class LicenseService {
     private final DeviceRepository  deviceRepository;
     private final DeviceLicenseRepository deviceLicenseRepository;
 
+    private final SignatureService signatureService;
+
     @Transactional
     public License createLicense(LicenseCreateRequest request, ApplicationUser admin) {
         // 404
@@ -140,7 +142,7 @@ public class LicenseService {
                 .build();
 
         // В будущем здесь добавится логика подписи (signature) через KeyStore
-        String signature = "digital_signature_placeholder";
+        String signature = signatureService.signTicket(ticket);
 
         return new TicketResponse(ticket, signature);
     }
@@ -172,7 +174,7 @@ public class LicenseService {
                 .isBlocked(license.isBlocked())
                 .build();
 
-        String signature = "digital_signature_placeholder";
+        String signature = signatureService.signTicket(ticket);
 
         return new TicketResponse(ticket, signature);
     }
