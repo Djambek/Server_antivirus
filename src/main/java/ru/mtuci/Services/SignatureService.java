@@ -14,11 +14,8 @@ import java.util.Base64;
 @Slf4j
 @RequiredArgsConstructor
 public class SignatureService {
-
-    // Внедряем провайдер ключей
     private final SignatureKeyStoreService keyStoreService;
 
-    // Внедряем ваш канонизатор (т.к. они в одном пакете ru.mtuci.Services, импорт не нужен)
     private final JsonCanonicalizer jsonCanonicalizer;
 
     public String signPayload(Object payload) {
@@ -41,5 +38,17 @@ public class SignatureService {
     }
     public String signTicket(ru.mtuci.Models.Ticket ticket) {
         return signPayload(ticket);
+    }
+    public byte[] signBytes(byte[] data) {
+        try {
+            PrivateKey privateKey = keyStoreService.getPrivateKey();
+            Signature signature = Signature.getInstance("SHA256withRSA");
+            signature.initSign(privateKey);
+            signature.update(data);
+            return signature.sign();
+        } catch (Exception e) {
+            log.error("Ошибка при подписи байтов", e);
+            throw new RuntimeException("Не удалось подписать бинарные данные", e);
+        }
     }
 }
