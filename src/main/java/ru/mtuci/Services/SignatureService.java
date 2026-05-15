@@ -21,31 +21,25 @@ public class SignatureService {
     // Внедряем ваш канонизатор (т.к. они в одном пакете ru.mtuci.Services, импорт не нужен)
     private final JsonCanonicalizer jsonCanonicalizer;
 
-    public String signTicket(Ticket ticket) {
+    public String signPayload(Object payload) {
         try {
-            // 1. Получаем приватный ключ из Key Provider
             PrivateKey privateKey = keyStoreService.getPrivateKey();
-
-            // 2. Канонизация по RFC 8785
-            String canonicalJson = jsonCanonicalizer.canonizeJson(ticket);
-
-            // 3. Получаем байты строго в кодировке UTF-8
+            // Канонизатор уже принимает Object
+            String canonicalJson = jsonCanonicalizer.canonizeJson(payload);
             byte[] canonicalBytes = canonicalJson.getBytes(StandardCharsets.UTF_8);
 
-            // 4. Инициализация подписи
             Signature signature = Signature.getInstance("SHA256withRSA");
             signature.initSign(privateKey);
-
-            // 5. Вычисление подписи
             signature.update(canonicalBytes);
             byte[] signedBytes = signature.sign();
 
-            // 6. Возврат результата в Base64
             return Base64.getEncoder().encodeToString(signedBytes);
-
         } catch (Exception e) {
-            log.error("Ошибка при создании цифровой подписи тикета", e);
-            throw new RuntimeException("Не удалось подписать тикет", e);
+            log.error("Ошибка при создании цифровой подписи", e);
+            throw new RuntimeException("Не удалось подписать полезную нагрузку", e);
         }
+    }
+    public String signTicket(ru.mtuci.Models.Ticket ticket) {
+        return signPayload(ticket);
     }
 }
